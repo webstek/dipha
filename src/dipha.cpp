@@ -29,10 +29,12 @@ void print_help_and_exit()
   std::cerr << "--dual    --  use dualization" << std::endl;
   std::cerr << "--upper_dim N   --  maximal dimension to compute" << std::endl;
   std::cerr << "--benchmark --  prints timing info" << std::endl;
+  std::cerr << "--filtration-only -- compute filtration ordering only; print timings and exit" << std::endl;
   MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
 }
 
-void parse_command_line(int argc, char** argv, bool& benchmark, bool& dualize, int64_t& upper_dim, std::string& input_filename, 
+void parse_command_line(int argc, char** argv, bool& benchmark, bool& dualize, bool& filtration_only,
+                        int64_t& upper_dim, std::string& input_filename, 
                         std::string& output_filename)
 {
 
@@ -48,6 +50,11 @@ void parse_command_line(int argc, char** argv, bool& benchmark, bool& dualize, i
     if (option == "--benchmark")
     {
       benchmark = true;
+    }
+    else if (option == "--filtration-only")
+    {
+      filtration_only = true;
+      benchmark = true;  // need timing infrastructure
     }
     else if (option == "--help")
     {
@@ -76,6 +83,31 @@ template< typename Complex >
 void compute(const std::string& input_filename, bool dualize, int64_t upper_dim, const std::string& output_filename)
 {
   Complex complex;
+
+  if (dipha::globals::filtration_only)
+  {
+    // Measure load time explicitly for the TIMING output.
+    MPI_Barrier(MPI_COMM_WORLD);
+    double t_load_start = MPI_Wtime();
+    complex.load_binary(input_filename, upper_dim);
+    MPI_Barrier(MPI_COMM_WORLD);
+    double t_load_end = MPI_Wtime();
+    double load_ms = (t_load_end - t_load_start) * 1000.0;
+    dipha::mpi_utils::cout_if_root() << "TIMING: load_ms=" << std::setprecision(3) << std::fixed << load_ms << std::endl;
+
+    // Compute the filtration ordering (parallel sort) and stop.
+    MPI_Barrier(MPI_COMM_WORLD);
+    double t_filt_start = MPI_Wtime();
+    dipha::data_structures::distributed_vector< int64_t > filtration_to_cell_map;
+    dipha::algorithms::get_filtration_to_cell_map(complex, dualize, filtration_to_cell_map);
+    MPI_Barrier(MPI_COMM_WORLD);
+    double t_filt_end = MPI_Wtime();
+    double filt_ms = (t_filt_end - t_filt_start) * 1000.0;
+    dipha::mpi_utils::cout_if_root() << "TIMING: filtration_ms=" << std::setprecision(3) << std::fixed << filt_ms
+                                     << " cells=" << complex.get_num_cells() << std::endl;
+    return;
+  }
+
   DIPHA_MACROS_BENCHMARK(complex.load_binary(input_filename, upper_dim); );
   if (dipha::globals::benchmark)
     dipha::mpi_utils::cout_if_root() << std::endl << "Number of cells in input: " << std::endl << complex.get_num_cells() << std::endl;
@@ -98,13 +130,23 @@ int main(int argc, char** argv)
   std::string output_filename; // name of file that will contain the persistence diagram
   bool benchmark = false; // print timings / info
   bool dualize = false; // primal / dual computation toggle
+  bool filtration_only = false; // stop after filtration construction
   int64_t upper_dim = std::numeric_limits< int64_t >::max();
-  parse_command_line(argc, argv, benchmark, dualize, upper_dim, input_filename, output_filename);
+  parse_command_line(argc, argv, benchmark, dualize, filtration_only, upper_dim, input_filename, output_filename);
 
   if (benchmark)
   {
     dipha::globals::benchmark = true;
+  }
 
+  if (filtration_only)
+  {
+    dipha::globals::filtration_only = true;
+    dipha::globals::benchmark = true;
+  }
+
+  if (dipha::globals::benchmark && !dipha::globals::filtration_only)
+  {
     dipha::mpi_utils::cout_if_root() << std::endl << "Input filename: " << std::endl << input_filename << std::endl;
 
     dipha::mpi_utils::cout_if_root() << std::endl << "upper_dim: " << upper_dim << std::endl;

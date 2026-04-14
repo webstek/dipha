@@ -41,5 +41,8 @@ namespace dipha
 
     // enable benchmarking - will decrease performance a bit due to more mpi_barriers
     bool benchmark = false;
+
+    // enable filtration-only mode - compute filtration ordering and exit
+    bool filtration_only = false;
   }
 }
