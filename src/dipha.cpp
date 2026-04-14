@@ -103,8 +103,10 @@ void compute(const std::string& input_filename, bool dualize, int64_t upper_dim,
     MPI_Barrier(MPI_COMM_WORLD);
     double t_filt_end = MPI_Wtime();
     double filt_ms = (t_filt_end - t_filt_start) * 1000.0;
+    int64_t peak_mem_mb = getPeakRSS() >> 20;
     dipha::mpi_utils::cout_if_root() << "TIMING: filtration_ms=" << std::setprecision(3) << std::fixed << filt_ms
-                                     << " cells=" << complex.get_num_cells() << std::endl;
+                                     << " cells=" << complex.get_num_cells()
+                                     << " peak_mem_mib=" << peak_mem_mb << std::endl;
     return;
   }
 
